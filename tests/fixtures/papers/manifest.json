@@ -1,0 +1,13 @@
+{
+  "comment": "PDF 处理回归基准夹具清单。folder 相对项目根目录；夹具需先通过 demo_verifier.py 生成缓存。新增夹具时请人工核对期望值后再登记。",
+  "papers": [
+    {
+      "folder": "cache/papers/Attention_Is_All_You_Need",
+      "type": "single_column_numbered_with_pdf_links",
+      "expect_sections_min": 20,
+      "expect_refs": 40,
+      "expect_contexts_min": 30,
+      "expect_contexts_max": 45
+    }
+  ]
+}

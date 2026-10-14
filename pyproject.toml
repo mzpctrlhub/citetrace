@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "citetrace"
+version = "0.1.0"
+description = "CiteTrace: Multi-Agent Citation Verification System"
+dependencies = [
+    "pymupdf>=1.23.0",
+    "pydantic>=2.0.0",
+    "typing_extensions>=4.8",
+]
+
+[project.optional-dependencies]
+pdfpro = ["pymupdf4llm>=0.0.17"]
+llm = ["openai>=1.30"]
+graph = ["langgraph>=0.2"]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["citetrace_pdf*", "models*", "parsers*", "tools*", "scripts*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
