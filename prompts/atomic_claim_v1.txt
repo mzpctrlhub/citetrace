@@ -36,21 +36,20 @@ Step 8. Every key in the input list must appear either in exactly one claim's ci
 
 --- Field rules ---
 source_spans     : the exact character range(s) of the paragraph this claim was derived from. Copy `text` verbatim from the paragraph, character for character, including punctuation and citation markers. Set `start` to 0 and `end` to len(text) (exact character indices are computed downstream by the automated validator using string match; do NOT count character indices in reasoning). Use more than one span when the claim draws on non-adjacent parts of the paragraph.
-verbatim_claim   : the text of the primary span, copied verbatim. It must be a substring of the paragraph.
 normalized_claim : the self-contained sentence produced in Step 5. This is the only field you may rewrite.
 citation_keys    : copied verbatim from the input list, brackets included.
 relationship     : exactly one value from Step 6.
-requires_review  : boolean from Step 7.
-review_reason    : short string; empty when requires_review is false.
+requires_review  : boolean from Step 7 (must output true or false).
+review_reason    : short string explaining why; output "" when requires_review is false.
 
 --- Output ---
 Return a single JSON object and nothing else. No markdown fence, no commentary, no trailing text.
+All properties are required.
 Shape:
 {
   "claims": [
     {
       "source_spans": [ { "start": <int>, "end": <int>, "text": <string> } ],
-      "verbatim_claim": <string>,
       "normalized_claim": <string>,
       "citation_keys": [<string>],
       "relationship": <background|method_usage|factual_claim|metric_comparison|unverifiable>,

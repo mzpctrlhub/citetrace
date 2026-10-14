@@ -84,6 +84,7 @@ class LLMClient:
     def __init__(self, config: ModelEndpointConfig):
         self.config = config
         self._openai_client = None
+        self.last_raw_response: str = ""
 
     def _get_client(self):
         if self._openai_client is None:
@@ -134,9 +135,12 @@ class LLMClient:
                 choice = resp.choices[0]
                 content = choice.message.content or ""
                 reasoning = getattr(choice.message, "reasoning_content", "") or ""
-                logger.info(f"[LLM DEBUG] finish_reason={choice.finish_reason}, content_len={len(content)}, reasoning_len={len(reasoning)}")
-                print(f"[LLM DEBUG] finish_reason={choice.finish_reason}, content_len={len(content)}, reasoning_len={len(reasoning)}")
-                return content.strip()
+                logger.info(
+                    f"[LLM DEBUG] finish_reason={choice.finish_reason}, "
+                    f"content_len={len(content)}, reasoning_len={len(reasoning)}"
+                )
+                self.last_raw_response = content.strip()
+                return self.last_raw_response
 
             except Exception as e:
                 last_error = e
@@ -253,7 +257,7 @@ class ConfigHub:
             api_key = env.get("COMMANDCODE_FAST_API_KEY") or default_key
             base_url = env.get("COMMANDCODE_FAST_BASE_URL") or default_url
             raw_model = env.get("COMMANDCODE_FAST_MODEL") or "inclusionai/ling-3.1-flash:free"
-            timeout = max(int(env.get("COMMANDCODE_FAST_TIMEOUT", "60")), 180)
+            timeout = int(env.get("COMMANDCODE_FAST_TIMEOUT", "180"))
         elif role == "reasoning":
             api_key = env.get("COMMANDCODE_REASONING_API_KEY") or default_key
             base_url = env.get("COMMANDCODE_REASONING_BASE_URL") or default_url

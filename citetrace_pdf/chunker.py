@@ -20,8 +20,6 @@ import hashlib
 import json
 import re
 from pathlib import Path
-import pymupdf
-from .pdf.table_reconstructor import reconstruct_tables_in_markdown
 from typing import Any, Dict, List, Optional
 
 # 表题形如 "Table 2: ..."、pymupdf4llm 产出的 "_Table 1._ ..." 或 "**Table 1**"
@@ -231,6 +229,9 @@ def chunk_paper_folder(folder: str | Path, max_chars: int = 2200) -> List[Dict[s
     主入口：读取文献夹 metadata.json 与各章节 Markdown，
     生成段落级 chunk 并写入 chunks.json，返回 chunk 列表。
     """
+    import pymupdf
+    from .pdf.table_reconstructor import reconstruct_tables_in_markdown
+
     folder = Path(folder)
     metadata = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
     doc_id = metadata.get("paper_id") or folder.name

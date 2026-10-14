@@ -33,11 +33,13 @@ class AtomicClaimExtractor:
         validator: ClaimValidator,
         prompt_path: Optional[Path] = None,
         max_tokens: int = 4000,
+        max_attempts: int = 3,
     ):
         self.llm = llm
         self.model_name = model_name
         self.validator = validator
         self.max_tokens = max_tokens
+        self.max_attempts = max(1, max_attempts)
 
         if prompt_path is None:
             prompt_path = Path(__file__).resolve().parents[1] / "prompts" / "atomic_claim_v1.txt"
@@ -55,6 +57,9 @@ class AtomicClaimExtractor:
         """返回该 context 拼装完成、占位符已全部替换的最终 prompt。"""
         return render_prompt(self.prompt_text, self._payload(context))
 
+    def _get_last_raw_response(self) -> str:
+        return getattr(self.llm, "last_raw_response", "") or ""
+
     def extract(self, context: dict) -> ExtractionOutcome:
         """context 是 extracted_claims.json 里的一条 claim 记录（原样传入）"""
         parent_claim_id = context.get("claim_id", "")
@@ -71,65 +76,58 @@ class AtomicClaimExtractor:
                 error="段落无引用标记，已跳过",
             )
 
-        # 首次调用
         payload = self._payload(context)
-        attempts = 1
-        raw_resp = ""
+        current_prompt = self.prompt_text
+        round_errors_history: List[str] = []
         response: Optional[AtomicClaimResponse] = None
         val_res: Optional[ValidationResult] = None
+        raw_resp = ""
+        attempts = 0
 
-        try:
-            response = self.llm.generate_json(
-                prompt=self.prompt_text,
-                payload=payload,
-                schema=AtomicClaimResponse,
-                max_tokens=self.max_tokens,
-            )
-            val_res = self.validator.validate_and_repair(paragraph, citation_keys, response)
-        except Exception as e:
-            logger.error(f"[{parent_claim_id}] LLM 调用/解析异常 (尝试 1): {e}")
-            return ExtractionOutcome(
-                parent_claim_id=parent_claim_id,
-                context_id=context_id,
-                status="llm_failed",
-                error=str(e),
-                attempts=1,
-            )
-
-        # 若校验失败，启动语义级重试（第 2 次尝试）
-        if not val_res.valid:
-            attempts = 2
-            logger.warning(f"[{parent_claim_id}] 校验未通过，触发语义级重试: {val_res.errors}")
-            first_errors = list(val_res.errors)
-
-            prompt_2 = (
-                self.prompt_text
-                + "\n\n--- Correction required ---\nYour previous output was rejected by the checker for these reasons:\n"
-                + "\n".join(f"- {e}" for e in first_errors)
-                + "\nRe-read the paragraph and return the full corrected JSON object."
-            )
-
+        for attempt in range(1, self.max_attempts + 1):
+            attempts = attempt
             try:
                 response = self.llm.generate_json(
-                    prompt=prompt_2,
+                    prompt=current_prompt,
                     payload=payload,
                     schema=AtomicClaimResponse,
                     max_tokens=self.max_tokens,
                 )
+                raw_resp = self._get_last_raw_response()
                 val_res = self.validator.validate_and_repair(paragraph, citation_keys, response)
             except Exception as e:
-                logger.error(f"[{parent_claim_id}] 重试轮次 LLM 异常: {e}")
+                raw_resp = self._get_last_raw_response()
+                logger.error(f"[{parent_claim_id}] LLM 调用/解析异常 (尝试 {attempt}): {e}")
+                prior_info = f"; 前序校验错误: {' | '.join(round_errors_history)}" if round_errors_history else ""
                 return ExtractionOutcome(
                     parent_claim_id=parent_claim_id,
                     context_id=context_id,
                     status="llm_failed",
-                    error=f"重试时异常: {e}; 首轮错误: {first_errors}",
-                    attempts=2,
+                    error=f"第 {attempt} 次尝试异常: {e}{prior_info}",
+                    raw_response=raw_resp,
+                    attempts=attempt,
                 )
 
-        # 二次校验仍未通过
-        if not val_res.valid:
-            combined_errs = "; ".join(val_res.errors)
+            if val_res.valid:
+                break
+
+            round_err_str = f"第{attempt}轮: " + "; ".join(val_res.errors)
+            round_errors_history.append(round_err_str)
+
+            if attempt < self.max_attempts:
+                logger.warning(
+                    f"[{parent_claim_id}] 第 {attempt} 轮校验未通过，触发语义级重试: {val_res.errors}"
+                )
+                current_prompt = (
+                    self.prompt_text
+                    + "\n\n--- Correction required ---\nYour previous output was rejected by the checker for these reasons:\n"
+                    + "\n".join(f"- {e}" for e in val_res.errors)
+                    + "\nRe-read the paragraph and return the full corrected JSON object."
+                )
+
+        # 所有尝试耗尽后仍未通过校验
+        if val_res is None or not val_res.valid:
+            combined_errs = " | ".join(round_errors_history) if round_errors_history else "未知校验错误"
             return ExtractionOutcome(
                 parent_claim_id=parent_claim_id,
                 context_id=context_id,
@@ -143,8 +141,10 @@ class AtomicClaimExtractor:
         # 校验成功：程序盖章生成 AtomicClaim
         stamped_claims: List[AtomicClaim] = []
         for idx, draft in enumerate(response.claims, start=1):
+            generated_verbatim = " ... ".join(s.text for s in draft.source_spans)
             claim_obj = AtomicClaim(
                 **draft.model_dump(),
+                verbatim_claim=generated_verbatim,
                 claim_id=f"{parent_claim_id}.a{idx:02d}",
                 parent_claim_id=parent_claim_id,
                 context_id=context_id,
