@@ -1,19 +1,38 @@
-import unittest
-from parsers.claim_validator import ClaimValidator
-from models.claim import AtomicClaimResponse, AtomicClaimDraft, SourceSpan
-from models.verification import ClaimIntent
+# ==============================================================================
+# 模块名称: tests/test_claim_validator.py
+# 模块职责: 阶段 1 确定性事实校验器与编排器的离线自动化单元测试套件
+# 核心价值: 100% 离线运行（0 Token 消耗、0 网络开销），覆盖 13 种学术防伪与自愈边界场景
+# ==============================================================================
+
+import unittest                                        # 导入 Python 标准单元测试框架
+from parsers.claim_validator import ClaimValidator     # 导入被测核心组件：事实校验器
+from models.claim import AtomicClaimResponse, AtomicClaimDraft, SourceSpan  # 导入测试构造所需的数据模型
+from models.verification import ClaimIntent            # 导入引用意图枚举
 
 
 class TestClaimValidator(unittest.TestCase):
+    """
+    【校验器核心测试用例集】
+    继承 unittest.TestCase，提供 setUp 夹具与断言方法体系
+    """
+
     def setUp(self):
-        self.validator = ClaimValidator()
+        """
+        【测试前置夹具 (Fixture)】
+        在每一个 test_* 测试方法执行前都会被自动调用一次，保证测试用例之间状态完全隔离。
+        """
+        self.validator = ClaimValidator()              # 实例化被测校验器对象
+        # 构造一条标准的学术测试段落：包含 2 个引用标记 [13] 和 [7]，以及一个实验数据 24.6
         self.paragraph = (
             "Recurrent models [13] have achieved high scores of 24.6 on translation tasks [7]."
         )
-        self.expected_keys = ["[13]", "[7]"]
+        self.expected_keys = ["[13]", "[7]"]           # 原文包含的期望引用键全集
 
     def test_1_valid_passing(self):
-        """正常通过：一段含 2 个引用标记的段落，键与 span 全部正确"""
+        """
+        【正向黄金用例】：所有引用完全吻合，所有切片与坐标 100% 精确匹配
+        预期：valid 为 True，errors 为空列表
+        """
         span1_text = "Recurrent models [13]"
         start1 = self.paragraph.find(span1_text)
         end1 = start1 + len(span1_text)
@@ -22,6 +41,7 @@ class TestClaimValidator(unittest.TestCase):
         start2 = self.paragraph.find(span2_text)
         end2 = start2 + len(span2_text)
 
+        # 模拟大模型交出了一份满分作业
         resp = AtomicClaimResponse(
             claims=[
                 AtomicClaimDraft(
@@ -45,8 +65,8 @@ class TestClaimValidator(unittest.TestCase):
         )
 
         res = self.validator.validate_and_repair(self.paragraph, self.expected_keys, resp)
-        self.assertTrue(res.valid)
-        self.assertEqual(len(res.errors), 0)
+        self.assertTrue(res.valid)                     # 断言校验必须判定成功
+        self.assertEqual(len(res.errors), 0)           # 断言硬错误列表必须为 0
 
     def test_2_hallucinated_reference(self):
         """编造引用：claim 里出现 expected_keys 之外的键"""
